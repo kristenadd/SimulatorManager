@@ -39,7 +39,7 @@ struct SimulatorManagerApp: App {
 struct SettingsView: View {
     @AppStorage(SettingsKey.autoCleanAfterRuntimeDelete) private var autoCleanAfterRuntimeDelete = true
     @AppStorage(SettingsKey.autoCleanOnLaunch) private var autoCleanOnLaunch = false
-    @State private var axTrusted = WindowRaiser.isTrusted
+    @State private var axTrusted = SimulatorViewer.isTrusted
     @ObservedObject private var updater = Updater.shared
 
     var body: some View {
@@ -60,14 +60,14 @@ struct SettingsView: View {
                         .disabled(!updater.canCheckForUpdates)
                 }
             }
-            Section("Bring to Front") {
+            Section("Showing Devices") {
                 HStack {
                     Image(systemName: axTrusted ? "checkmark.circle.fill" : "exclamationmark.circle")
                         .foregroundStyle(axTrusted ? .green : .orange)
-                    Text(axTrusted ? "Accessibility access granted" : "Accessibility access needed to raise a specific device window")
+                    Text(axTrusted ? "Accessibility access granted" : "Accessibility access needed to show a specific device in \(SimulatorViewer.displayName)")
                     Spacer()
                     if !axTrusted {
-                        Button("Grant…") { WindowRaiser.requestTrust() }
+                        Button("Grant…") { SimulatorViewer.requestTrust() }
                     }
                 }
             }
@@ -75,6 +75,6 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 520)
         .fixedSize()
-        .onAppear { axTrusted = WindowRaiser.isTrusted }
+        .onAppear { axTrusted = SimulatorViewer.isTrusted }
     }
 }

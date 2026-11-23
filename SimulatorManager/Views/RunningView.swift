@@ -49,11 +49,11 @@ struct RunningView: View {
                 .disabled(selection.isEmpty)
                 Menu {
                     Button("Shut Down All Simulators") { Task { await model.shutdownAll() } }
-                    Button("Quit Simulator App") { model.quitSimulatorApp() }
+                    Button("Quit \(SimulatorViewer.displayName)") { model.quitSimulatorApp() }
                 } label: {
                     Label("More", systemImage: "power")
                 }
-                .disabled(rows.isEmpty && WindowRaiser.simulatorApp == nil)
+                .disabled(rows.isEmpty && SimulatorViewer.runningApp == nil)
             }
         }
         // Poll while this tab is visible so external boots/shutdowns show up.

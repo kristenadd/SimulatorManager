@@ -26,9 +26,10 @@ open build/DerivedData/Build/Products/Release/SimulatorManager.app
 Debug builds are named **Simulator Manager Debug** with their own bundle ID, and never update
 themselves, so they can sit alongside an installed release.
 
-**Bring to Front** raises a specific device window using the Accessibility API. Grant access in
-System Settings › Privacy & Security › Accessibility (Settings has a shortcut). Without it, the app
-brings the Simulator app forward instead.
+Launching or bringing a simulator to the front opens it in Simulator (Xcode 26 and earlier) or
+DeviceHub (Xcode 27, which replaced Simulator), then selects that device using the Accessibility API.
+Grant access in System Settings › Privacy & Security › Accessibility (Settings has a shortcut).
+Without it, the app still boots the simulator and opens the viewer, but you pick the device yourself.
 
 ## Releasing
 

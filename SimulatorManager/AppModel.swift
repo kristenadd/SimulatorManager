@@ -157,27 +157,31 @@ final class AppModel {
                 }
                 try await group.waitForAll()
             }
-            // Open Simulator.app focused on the last device; it shows windows for every booted device.
-            try await Simctl.openSimulator(focusing: targets.last?.udid)
-            lastMessage = "Launched \(targets.map(\.name).joined(separator: ", "))"
+            // Show the last one; Simulator.app also opens a window for every other booted device,
+            // and DeviceHub lists them in its sidebar.
+            let names = targets.map(\.name).joined(separator: ", ")
+            let outcome = try await SimulatorViewer.show(targets.last!)
+            lastMessage = message(for: outcome, prefix: "Launched \(names)", device: targets.last!)
         }
         await refreshDevices()
     }
 
     func bringToFront(_ device: SimDevice) async {
         await perform("Bringing \(device.name) to front…") {
-            if WindowRaiser.simulatorApp == nil {
-                try await Simctl.openSimulator(focusing: device.udid)
-                try await Task.sleep(for: .seconds(1.5))
-            }
-            if !WindowRaiser.raise(deviceName: device.name, osDisplay: device.osDisplay) {
-                if !WindowRaiser.isTrusted {
-                    WindowRaiser.requestTrust()
-                    lastMessage = "Simulator activated. Grant Accessibility access to raise individual device windows."
-                } else {
-                    try await Simctl.openSimulator(focusing: device.udid)
-                }
-            }
+            let outcome = try await SimulatorViewer.show(device)
+            lastMessage = message(for: outcome, prefix: "Showing \(device.name)", device: device)
+        }
+    }
+
+    private func message(for outcome: SimulatorViewer.Outcome, prefix: String, device: SimDevice) -> String {
+        switch outcome {
+        case .shown:
+            return prefix
+        case .needsAccessibility:
+            SimulatorViewer.requestTrust()
+            return "\(prefix). Grant Accessibility access so \(device.name) can be selected in \(SimulatorViewer.displayName) automatically."
+        case .notFound:
+            return "\(prefix). It didn't appear in \(SimulatorViewer.displayName) yet; select it there."
         }
     }
 
@@ -203,7 +207,7 @@ final class AppModel {
     }
 
     func quitSimulatorApp() {
-        WindowRaiser.simulatorApp?.terminate()
+        SimulatorViewer.runningApp?.terminate()
     }
 
     func deleteDevices(_ ids: Set<SimDevice.ID>) async {

@@ -167,11 +167,4 @@ enum Simctl {
     static func deleteRuntime(_ imageID: String) async throws {
         try await simctl("runtime", "delete", imageID)
     }
-
-    /// Opens Simulator.app focused on the given device.
-    static func openSimulator(focusing udid: String?) async throws {
-        var args = ["-a", "Simulator"]
-        if let udid { args += ["--args", "-CurrentDeviceUDID", udid] }
-        try await Shell.run("/usr/bin/open", args)
-    }
 }
