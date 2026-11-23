@@ -25,12 +25,16 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
-    @State private var selection: SidebarItem? =
-        SidebarItem(rawValue: UserDefaults.standard.string(forKey: "initialTab") ?? "") ?? .devices
+    /// Remembered between launches. Pass `-selectedTab runtimes` on the command line to override.
+    @AppStorage("selectedTab") private var selectedTab: SidebarItem = .devices
+
+    private var selection: Binding<SidebarItem?> {
+        Binding(get: { selectedTab }, set: { if let item = $0 { selectedTab = item } })
+    }
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarItem.allCases, selection: $selection) { item in
+            List(SidebarItem.allCases, selection: selection) { item in
                 Label(item.title, systemImage: item.systemImage)
                     .badge(badge(for: item))
                     .tag(item)
@@ -38,7 +42,7 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 170, ideal: 190)
         } detail: {
             Group {
-                switch selection ?? .devices {
+                switch selectedTab {
                 case .devices: DevicesView()
                 case .running: RunningView()
                 case .runtimes: RuntimesView()
