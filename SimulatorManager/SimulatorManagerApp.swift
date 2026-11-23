@@ -1,8 +1,16 @@
 import SwiftUI
 
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        _ = Updater.shared // starts Sparkle's scheduled update checks
+    }
+}
+
 @main
 struct SimulatorManagerApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
+    @ObservedObject private var updater = Updater.shared
 
     var body: some Scene {
         Window("Simulator Manager", id: "main") {
@@ -11,6 +19,11 @@ struct SimulatorManagerApp: App {
                 .frame(minWidth: 960, minHeight: 520)
         }
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Simulator Manager") { AboutPanel.show() }
+                Button("Check for Updates…") { updater.checkForUpdates() }
+                    .disabled(!updater.canCheckForUpdates)
+            }
             CommandGroup(after: .toolbar) {
                 Button("Refresh") { Task { await model.refreshAll() } }
                     .keyboardShortcut("r")
@@ -27,6 +40,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.autoCleanAfterRuntimeDelete) private var autoCleanAfterRuntimeDelete = true
     @AppStorage(SettingsKey.autoCleanOnLaunch) private var autoCleanOnLaunch = false
     @State private var axTrusted = WindowRaiser.isTrusted
+    @ObservedObject private var updater = Updater.shared
 
     var body: some View {
         Form {
@@ -35,6 +49,16 @@ struct SettingsView: View {
                 Text("Removes simulators and data folders left without a runtime.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Automatically clean up orphaned folders on launch", isOn: $autoCleanOnLaunch)
+            }
+            Section("Updates") {
+                Toggle("Automatically check for updates", isOn: $updater.automaticallyChecks)
+                HStack {
+                    Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"))")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Check Now") { updater.checkForUpdates() }
+                        .disabled(!updater.canCheckForUpdates)
+                }
             }
             Section("Bring to Front") {
                 HStack {
