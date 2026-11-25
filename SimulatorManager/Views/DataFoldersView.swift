@@ -9,6 +9,7 @@ struct DataFoldersView: View {
     @State private var search = ""
     @State private var pendingDelete: Set<String>?
     @State private var confirmCleanup = false
+    @State private var breakdownFolder: DataFolder?
 
     private var rows: [DataRow] {
         model.folders
@@ -84,6 +85,9 @@ struct DataFoldersView: View {
                 }
                 if !selectedFolders.isEmpty {
                     Button("Show Folder in Finder") { model.reveal(selectedFolders.map(\.url)) }
+                    if selectedFolders.count == 1 {
+                        Button("Show Usage Breakdown…") { breakdownFolder = selectedFolders[0] }
+                    }
                 }
                 if !ids.isEmpty {
                     Divider()
@@ -103,6 +107,11 @@ struct DataFoldersView: View {
                 Button { model.reveal([FileOps.devicesRoot]) } label: {
                     Label("Open Devices Folder", systemImage: "folder")
                 }
+                Button { breakdownFolder = folders(selection).first } label: {
+                    Label("Usage Breakdown", systemImage: "chart.bar.doc.horizontal")
+                }
+                .disabled(folders(selection).count != 1)
+                .help("See what takes up space in the selected simulator's data folder")
                 Button { confirmCleanup = true } label: {
                     Label("Clean Up Orphans", systemImage: "sparkles")
                 }
@@ -132,6 +141,9 @@ struct DataFoldersView: View {
             }
         } message: {
             Text(deleteMessage)
+        }
+        .sheet(item: $breakdownFolder) { folder in
+            UsageBreakdownView(folder: folder)
         }
         .confirmationDialog("Clean up orphaned data?", isPresented: $confirmCleanup, titleVisibility: .visible) {
             Button("Delete \(model.orphanFolders.count) Folders", role: .destructive) {
