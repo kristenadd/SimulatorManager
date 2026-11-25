@@ -160,6 +160,10 @@ enum Simctl {
         try await simctl("delete", udid)
     }
 
+    static func uninstall(_ bundleID: String, from udid: String) async throws {
+        try await simctl("uninstall", udid, bundleID)
+    }
+
     static func deleteUnavailable() async throws {
         try await simctl("delete", "unavailable")
     }

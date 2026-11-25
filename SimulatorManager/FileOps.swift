@@ -7,6 +7,7 @@ struct ScannedFolder: Sendable {
     let url: URL
     let plistName: String?
     let plistRuntime: String?
+    let apps: [SimApp]
 }
 
 enum FileOps {
@@ -39,8 +40,51 @@ enum FileOps {
                     udid: url.lastPathComponent,
                     url: url,
                     plistName: plist?["name"] as? String,
-                    plistRuntime: plist?["runtime"] as? String)
+                    plistRuntime: plist?["runtime"] as? String,
+                    apps: scanApps(in: url))
             }
+        }
+    }
+
+    private static let metadataName = ".com.apple.mobile_container_manager.metadata.plist"
+
+    /// Maps bundle identifiers to the containers in `data/Containers/<kind>`.
+    private static func containers(_ device: URL, _ kind: String) -> [(id: String, url: URL)] {
+        let root = device.appendingPathComponent("data/Containers/\(kind)", isDirectory: true)
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        return entries.compactMap { url in
+            let metadata = NSDictionary(contentsOf: url.appendingPathComponent(metadataName))
+            guard let id = metadata?["MCMMetadataIdentifier"] as? String else { return nil }
+            return (id, url)
+        }
+    }
+
+    /// Lists the apps the user installed in a simulator. System apps live in the runtime, not here.
+    static func scanApps(in device: URL) -> [SimApp] {
+        let udid = device.lastPathComponent
+        let data = Dictionary(containers(device, "Data/Application"), uniquingKeysWith: { a, _ in a })
+        let plugins = containers(device, "Data/PluginKitPlugin")
+        return containers(device, "Bundle/Application").compactMap { bundleID, container in
+            let contents = (try? FileManager.default.contentsOfDirectory(
+                at: container, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+            guard let appURL = contents.first(where: { $0.pathExtension == "app" }) else { return nil }
+            let info = NSDictionary(contentsOf: appURL.appendingPathComponent("Info.plist"))
+            let name = (info?["CFBundleDisplayName"] as? String)
+                ?? (info?["CFBundleName"] as? String)
+                ?? appURL.deletingPathExtension().lastPathComponent
+            let short = info?["CFBundleShortVersionString"] as? String
+            let build = info?["CFBundleVersion"] as? String
+            let version = switch (short, build) {
+            case let (s?, b?) where s != b: "\(s) (\(b))"
+            case let (s?, _): s
+            case let (nil, b?): b
+            default: ""
+            }
+            return SimApp(
+                udid: udid, bundleID: bundleID, name: name, version: version,
+                appURL: appURL, bundleContainer: container, dataContainer: data[bundleID],
+                extensionContainers: plugins.filter { $0.id.hasPrefix(bundleID + ".") }.map(\.url))
         }
     }
 
@@ -75,6 +119,19 @@ enum FileOps {
         let escaped = path.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let script = "do shell script \"/bin/rm -rf \" & quoted form of \"\(escaped)\" with administrator privileges"
         try await Shell.run("/usr/bin/osascript", ["-e", script])
+    }
+
+    /// Deletes a shut-down simulator's LaunchServices database so it's rebuilt from the app containers
+    /// on the next boot. The separate system-apps database is left alone.
+    static func resetLaunchServicesCache(in device: URL) async throws {
+        try await background {
+            let lsd = device.appendingPathComponent("data/var/db/lsd", isDirectory: true)
+            let entries = (try? FileManager.default.contentsOfDirectory(at: lsd, includingPropertiesForKeys: nil)) ?? []
+            for url in entries where url.lastPathComponent.hasPrefix("com.apple.LaunchServices-")
+                && url.pathExtension == "csstore" {
+                try FileManager.default.removeItem(at: url)
+            }
+        }
     }
 
     static func removeLogs(for udid: String) async {

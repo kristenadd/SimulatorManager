@@ -7,7 +7,9 @@ A native macOS app for keeping Xcode's simulators under control.
 - **Runtimes:** see each simulator runtime's version, build and size, and delete the ones you don't need.
 - **Data Folders:** see how much space each simulator's data uses, delete folders, and clean up orphans:
   folders whose runtime is gone, or that CoreSimulator no longer knows about. Cleanup can run
-  automatically after you delete runtimes, or on launch (Settings).
+  automatically after you delete runtimes, or on launch (Settings). Expand a simulator to see its
+  installed apps with their icons, show an app or its documents in Finder, or delete an app along with
+  its data.
 - Every table sorts by OS version and supports multi-select. The bar above each table selects rows by
   version, for example "iOS runtimes lower than 18.0", so you can delete them all at once.
 - Everything runs in the background, so the window never stalls.

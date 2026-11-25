@@ -114,31 +114,47 @@ final class AppModel {
         let scanned = try await FileOps.scanDeviceFolders()
         let byUDID = Dictionary(devices.map { ($0.udid, $0) }, uniquingKeysWith: { a, _ in a })
         let previousSizes = Dictionary(folders.map { ($0.id, $0.sizeBytes) }, uniquingKeysWith: { a, _ in a })
+        let previousAppSizes = Dictionary(
+            folders.flatMap(\.apps).map { ($0.id, $0.sizeBytes) }, uniquingKeysWith: { a, _ in a })
+        func apps(_ s: ScannedFolder) -> [SimApp] {
+            s.apps.map { var app = $0; app.sizeBytes = previousAppSizes[app.id] ?? nil; return app }
+        }
 
         folders = scanned.map { s in
             if let d = byUDID[s.udid] {
                 return DataFolder(
                     udid: s.udid, url: s.url, name: d.name, platform: d.platform, version: d.version,
                     status: d.isAvailable ? .active : .orphaned, isRegistered: true, isBooted: d.isActive,
-                    sizeBytes: previousSizes[s.udid] ?? nil)
+                    sizeBytes: previousSizes[s.udid] ?? nil, apps: apps(s))
             }
             let parsed = s.plistRuntime.map { runtimeNames[$0] ?? PlatformNames.parse(runtimeKey: $0) }
             return DataFolder(
                 udid: s.udid, url: s.url, name: s.plistName ?? "Unknown device",
                 platform: parsed?.0 ?? "", version: parsed?.1 ?? OSVersion(components: []),
                 status: .unregistered, isRegistered: false, isBooted: false,
-                sizeBytes: previousSizes[s.udid] ?? nil)
+                sizeBytes: previousSizes[s.udid] ?? nil, apps: apps(s))
         }
 
         let targets = folders.map { ($0.udid, $0.url) }
+        let appTargets = folders.flatMap(\.apps).map { ($0.id, $0.allContainers) }
         Task {
             await withTaskGroup(of: (String, Int64).self) { group in
                 for (udid, url) in targets {
                     group.addTask { (udid, await FileOps.directorySize(url)) }
                 }
-                for await (udid, size) in group {
-                    if let i = self.folders.firstIndex(where: { $0.udid == udid }) {
+                for (id, urls) in appTargets {
+                    group.addTask {
+                        var total: Int64 = 0
+                        for url in urls { total += await FileOps.directorySize(url) }
+                        return (id, total)
+                    }
+                }
+                for await (id, size) in group {
+                    if let i = self.folders.firstIndex(where: { $0.udid == id }) {
                         self.folders[i].sizeBytes = size
+                    } else if let i = self.folders.firstIndex(where: { id.hasPrefix($0.udid + "/") }),
+                              let j = self.folders[i].apps.firstIndex(where: { $0.id == id }) {
+                        self.folders[i].apps[j].sizeBytes = size
                     }
                 }
             }
@@ -308,6 +324,34 @@ final class AppModel {
             try await FileOps.remove(f.url)
         }
         await FileOps.removeLogs(for: f.udid)
+    }
+
+    var allApps: [SimApp] { folders.flatMap(\.apps) }
+
+    /// Uninstalls apps, removing their bundles, documents and other data.
+    func deleteApps(_ ids: Set<SimApp.ID>) async {
+        let targets = allApps.filter { ids.contains($0.id) }
+        guard !targets.isEmpty else { return }
+        let freed = targets.compactMap(\.sizeBytes).reduce(0, +)
+        let byDevice = Dictionary(grouping: targets, by: \.udid)
+        await perform("Deleting \(label(targets.count, "app"))…") {
+            for (udid, apps) in byDevice {
+                guard let folder = folders.first(where: { $0.udid == udid }) else { continue }
+                if folder.isBooted {
+                    for app in apps { try await Simctl.uninstall(app.bundleID, from: udid) }
+                } else {
+                    // Booting just to uninstall is slow and can fail when memory is tight, so remove
+                    // the containers, then drop the simulator's LaunchServices cache. It rebuilds from the
+                    // containers on the next boot; otherwise it would still list the deleted apps.
+                    for app in apps {
+                        for url in app.allContainers { try await FileOps.remove(url) }
+                    }
+                    try await FileOps.resetLaunchServicesCache(in: folder.url)
+                }
+            }
+            lastMessage = "Deleted \(label(targets.count, "app"))" + (freed > 0 ? ", freeing \(freed.byteString)" : "")
+        }
+        await refreshAll()
     }
 
     /// Deletes every data folder whose runtime is gone, plus folders CoreSimulator doesn't know about.

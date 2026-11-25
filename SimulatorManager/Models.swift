@@ -137,9 +137,80 @@ struct DataFolder: Identifiable, Hashable, Sendable {
     let isRegistered: Bool
     let isBooted: Bool
     var sizeBytes: Int64?
+    var apps: [SimApp] = []
 
     var osDisplay: String { platform.isEmpty ? "Unknown" : "\(platform) \(version)" }
     var sizeSort: Int64 { sizeBytes ?? -1 }
+}
+
+/// An app installed in a simulator, found from its containers on disk.
+struct SimApp: Identifiable, Hashable, Sendable {
+    var id: String { "\(udid)/\(bundleID)" }
+    let udid: String
+    let bundleID: String
+    let name: String
+    let version: String
+    /// The `.app` bundle.
+    let appURL: URL
+    /// The folder installd created to hold the bundle.
+    let bundleContainer: URL
+    /// The app's sandbox (Documents, Library, tmp). Missing until the app first runs.
+    let dataContainer: URL?
+    /// Sandboxes of the app's extensions.
+    let extensionContainers: [URL]
+    var sizeBytes: Int64?
+
+    var documentsURL: URL? {
+        guard let dataContainer else { return nil }
+        let documents = dataContainer.appendingPathComponent("Documents", isDirectory: true)
+        return FileManager.default.fileExists(atPath: documents.path) ? documents : dataContainer
+    }
+    /// Everything removed when the app is deleted from a simulator that isn't running.
+    var allContainers: [URL] { [bundleContainer] + [dataContainer].compactMap(\.self) + extensionContainers }
+}
+
+/// A row in the Data Folders outline: a simulator's folder, or one of its apps.
+enum DataRow: Identifiable, Hashable {
+    case folder(DataFolder)
+    case app(SimApp)
+
+    var id: String {
+        switch self {
+        case .folder(let f): f.id
+        case .app(let a): a.id
+        }
+    }
+
+    // Sort keys for the table's columns. Apps are always listed by name under their simulator.
+    var name: String {
+        switch self {
+        case .folder(let f): f.name
+        case .app(let a): a.name
+        }
+    }
+    var version: OSVersion {
+        if case .folder(let f) = self { f.version } else { OSVersion(components: []) }
+    }
+    var status: String {
+        if case .folder(let f) = self { f.status.rawValue } else { "" }
+    }
+    var sizeSort: Int64 {
+        switch self {
+        case .folder(let f): f.sizeSort
+        case .app(let a): a.sizeBytes ?? -1
+        }
+    }
+    var detail: String {
+        switch self {
+        case .folder(let f): f.udid
+        case .app(let a): a.bundleID
+        }
+    }
+
+    var children: [DataRow]? {
+        guard case .folder(let f) = self, !f.apps.isEmpty else { return nil }
+        return f.apps.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }.map(DataRow.app)
+    }
 }
 
 extension Int64 {
